@@ -1,8 +1,8 @@
 [package]
-edition      = "2024"
-name         = "wifi"
+edition = "2024"
+name = "wifi"
 rust-version = "1.88"
-version      = "0.1.0"
+version = "0.1.0"
 
 [[bin]]
 name = "wifi"
@@ -19,7 +19,7 @@ esp-rtos = { version = "0.2.0", features = [
   "esp32",
 ] }
 
-defmt                  = "1.0.1"
+defmt = "1.0.1"
 esp-bootloader-esp-idf = { version = "0.4.0", features = ["defmt", "esp32"] }
 
 embassy-net = { version = "0.7.1", features = [
@@ -64,8 +64,12 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
 ] }
 
 critical-section = "1.2.0"
-static_cell      = "2.1.1"
+static_cell = "2.1.1"
 
+
+edge-dhcp = "0.5.0"
+edge-nal = "0.5.0"
+edge-nal-embassy = "0.6.0"
 
 [profile.dev]
 # Rust debug is too slow.
@@ -73,10 +77,10 @@ static_cell      = "2.1.1"
 opt-level = "s"
 
 [profile.release]
-codegen-units    = 1     # LLVM can perform better optimizations using a single thread
-debug            = 2
+codegen-units = 1        # LLVM can perform better optimizations using a single thread
+debug = 2
 debug-assertions = false
-incremental      = false
-lto              = 'fat'
-opt-level        = 's'
-overflow-checks  = false
+incremental = false
+lto = 'fat'
+opt-level = 's'
+overflow-checks = false

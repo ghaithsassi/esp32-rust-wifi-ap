@@ -6,17 +6,23 @@
     holding buffers for the duration of a data transfer."
 )]
 
-use alloc::string::String;
+use core::{net::Ipv4Addr, str::FromStr};
 use defmt::info;
 use embassy_executor::Spawner;
+use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4};
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
 use esp_hal::ram;
+use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
 use {esp_backtrace as _, esp_println as _};
 
 #[path = "../ap.rs"]
 mod ap;
+#[path = "../dhcp.rs"]
+mod dhcp;
+#[path = "../server.rs"]
+mod server;
 
 extern crate alloc;
 
@@ -33,6 +39,8 @@ macro_rules! mk_static {
         x
     }};
 }
+
+const GW_IP_ADDR_ENV: Option<&'static str> = option_env!("GATEWAY_IP");
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
@@ -52,12 +60,39 @@ async fn main(spawner: Spawner) -> ! {
 
     let radio_init = &*mk_static!(esp_radio::Controller<'static>, esp_radio::init().unwrap());
 
-    let (wifi_controller, _interfaces) =
+    let (wifi_controller, interfaces) =
         esp_radio::wifi::new(&radio_init, peripherals.WIFI, Default::default()).unwrap();
 
-    info!("Device capabilities: {:?}", wifi_controller.capabilities());
+    let device = interfaces.ap;
+    let gw_ip_addr_str = GW_IP_ADDR_ENV.unwrap_or("192.168.2.1");
+    let gw_ip_addr = Ipv4Addr::from_str(gw_ip_addr_str).expect("failed to parse gateway ip");
 
-    spawner.spawn(ap::connection(wifi_controller)).ok();
+    let config = embassy_net::Config::ipv4_static(StaticConfigV4 {
+        address: Ipv4Cidr::new(gw_ip_addr, 24),
+        gateway: Some(gw_ip_addr),
+        dns_servers: Default::default(),
+    });
+
+    let rng = Rng::new();
+    let seed = (rng.random() as u64) << 32 | rng.random() as u64;
+    // Init network stack
+    let (stack, runner) = embassy_net::new(
+        device,
+        config,
+        mk_static!(StackResources<3>, StackResources::<3>::new()),
+        seed,
+    );
+    spawner.spawn(ap::start_ap(wifi_controller)).ok();
+    spawner.spawn(ap::net_task(runner)).ok();
+    spawner.spawn(dhcp::run_dhcp(stack, gw_ip_addr_str)).ok();
+    loop {
+        if stack.is_link_up() {
+            break;
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+
+    server::start_server(stack, gw_ip_addr_str).await;
 
     loop {
         info!("connecting ...");
